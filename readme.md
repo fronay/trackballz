@@ -1,0 +1,1 @@
+Attempt at BMuffin challenge on pool ball tracking on billiards table, using scikit-image and opencv.
