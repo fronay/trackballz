@@ -19,9 +19,10 @@ import matplotlib.pyplot as plt
 from skimage import io, filters, color, draw
 # -- coin example imports:
 # (http://scikit-image.org/docs/dev/user_guide/tutorial_segmentation.html)
-from skimage.feature import canny
+from skimage.feature import canny, blob_dog, blob_log, blob_doh
 from scipy import ndimage as ndi
-from skimage.filters import sobel
+from scipy import misc
+from skimage.filters import sobel, threshold_otsu, threshold_mean
 from skimage.morphology import watershed
 # -- custom imports
 from helpers import greyscale, default_plot
@@ -32,12 +33,15 @@ from skimage.feature import peak_local_max
 from skimage.util import img_as_ubyte
 # -- other seg experiments:
 from skimage.segmentation import quickshift
+from math import sqrt
 # -- erosion/dilation
 from skimage.morphology import erosion, dilation, opening, closing, white_tophat
 from skimage.morphology import black_tophat, skeletonize, convex_hull_image
 from skimage.morphology import disk
 # -- histogram
 from skimage.exposure import histogram
+# -- screw it, I'll use opencv too
+import cv2
 
 
 # Light blue is roughly rgb(56,186,199)
@@ -58,6 +62,11 @@ def eroder(img, disk_size):
 	eroded = erosion(img, selem)
 	return eroded
 
+def dilater(img, disk_size):
+	selem = disk(disk_size)
+	dilated = dilation(img, selem)
+	return dilated
+
 def closer(img, disk_size):
 	selem = disk(disk_size)
 	closed = closing(img, selem)
@@ -75,7 +84,7 @@ def color_histo(img):
 		print "weird number of color channels going on: ", img.shape
 	return (histogram(chan) for chan in channels)
 
-def remove_color(colored_pic, rgb_color, tolerance=0.6):
+def remove_color(colored_pic, rgb_color, tolerance=0.9):
 	"""blanks out any color in image within tolerance-percentage of color given"""
 	# surprisingly, a high tolerance works best for the training pic...
 	img = colored_pic.copy()
@@ -85,12 +94,18 @@ def remove_color(colored_pic, rgb_color, tolerance=0.6):
 	# rgb stored as [[(255,255,255), (0,0,0)], [(100,100,100), (5,5,5)], etc...]
 	# -- this works suprisingly well as first guess:
 	# rimg[rimg[:,:,0]>60]=255
-	# -- but need to find 
-	print rlims, glims, blims
+	# -- more universal way:
 	img[((img[:, :, 0]>rlims[0]) & (img[:, :, 0]<rlims[1])) & 
 	((img[:, :, 1]>glims[0]) & (img[:, :, 1]<glims[1])) &
-	((img[:, :, 2]>blims[0]) & (img[:, :, 2]<blims[1]))] = 255 
+	((img[:, :, 2]>blims[0]) & (img[:, :, 2]<blims[1]))] = 255
 	return img
+
+def mask_balls(colored_pic):
+	"""set remaining color blobs to black for easier encirclement"""
+	g = greyscale(colored_pic)
+	thresh = threshold_mean(g)
+	binary = g > thresh
+	return binary
 
 def hough_fun(img):
 	"""fit circles to segmented image based on plausible range of radii"""
@@ -126,30 +141,51 @@ def hough_fun(img):
 		blank[cy, cx] = 255
 	return blank
 
-def quick_fun(img):
-	"""throwaway function for trying quickshit segmentation"""
-	return quickshift(img, convert2lab=True)
-
+def blobber(img):
+	"""use std blob-detection function to plot circles surrounding segmented blobs"""
+	blobs = blob_dog(img, min_sigma=20, threshold=.1)
+	blobs[:, 2] = blobs[:, 2] * sqrt(2)
+	fig, ax = plt.subplots()
+	ax.imshow(img, cmap="gray")
+	for blob in blobs:
+		y, x, r = blob
+		c = plt.Circle((x, y), r, color="0.75", linewidth=2, fill=False)
+		ax.add_patch(c)
 # fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(6, 6))
 
+def cv_blob_detect(img):
+	"""https://www.learnopencv.com/blob-detection-using-opencv-python-c/"""
+	img = cv2.imread(img, cv2.IMREAD_GRAYSCALE)
+	detector = cv2.SimpleBlobDetector()
+	keypoints = detector.detect(img)
+	im_with_keypoints = cv2.drawKeypoints(img, keypoints, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+	cv2.imshow("Keypoints", im_with_keypoints)
+	cv2.imwrite("keypoints_blob_test.png", im_with_keypoints)
+	cv2.waitKey(0)
 
 def main():
 	ballz = greyscale(io.imread("sc_cropped.png"))
 	color_ballz = io.imread("sc_cropped.png")
-	print color_ballz[0,0,0]
 	# r,g,b = color_histo(color_ballz)
 	# plt.plot(r[1],r[0],g[1],g[0], b[1], b[0])
-	# plt.show()
+	# 
 	# result = edge_fun(ballz)
 	# default_plot([edge_fun(ballz), result])
 	uncolored = remove_color(color_ballz, LIGHT_BLUE)
-	cannied = edge_fun(greyscale(uncolored))
-	houghed = hough_fun(cannied)
-	default_plot([color_ballz, uncolored, cannied, houghed], color=True)
+	# cannied = edge_fun(greyscale(uncolored))
+	# houghed = hough_fun(cannied)
+	masked = mask_balls(uncolored)
+	eroded = eroder(masked, 5)
+	# misc.imsave("yo.png", eroder(masked, 10))
+	# cv_blob_detect("yo.png")
+	default_plot([masked, eroded])
+	# default_plot([color_ballz, uncolored, mask_balls], color=True)
+	# plt.show()
 
 if __name__ == "__main__":
 	main()
 	
+
 
 
 

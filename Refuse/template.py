@@ -9,9 +9,9 @@ from skimage import io
 
 # change this to ballz
 # image = data.coins()
-ballz = greyscale(io.imread("sc_cropped.png"))
+ballz = greyscale(io.imread("Figures/blob_test.png"))
 image = ballz
-coin = image[110:210, 800:900]
+coin = greyscale(io.imread("blob_template.png"))
 
 result = match_template(image, coin)
 ij = np.unravel_index(np.argmax(result), result.shape)

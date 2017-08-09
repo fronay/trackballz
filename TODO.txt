@@ -1,0 +1,15 @@
+# -- Mini milestones so far:
+1. Table color removal based on fixed color -> pre-segments ball positions 
+2. Rough coords/ bounding circle for balls based on distance transform
+
+# -- Milestones to come:
+*Code-clean-up:
+	Integrate color removal & ball bounding functions in new main function
+*Automatise/ make more robust:
+	Find ball radius (from modal circular-blob radius)
+	Find table color for removal
+*Rudimentary ball identification:
+	Take color histogram of each bounding box -> assign initial color identity
+*Video integration
+	Check timing in loop
+	Create "memory" object for individual balls
