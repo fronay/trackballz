@@ -1,21 +1,16 @@
 # DONE: use coin trick to segment out single ballz
-
-# TODO: (get dominant color) -> e.g. use histogram; find peak;
-# 		... mask anything around that peak; blacken off table edge.
+# DONE: (get dominant color) 
+#       ... mask anything around that peak; blacken off table edge.
 # TODO: try opencv hough -> http://www.pyimagesearch.com/2014/07/21/detecting-circles-images-using-opencv-hough-circles/
 # TODO: color separation
 # TODO: try template matching algos
 
-"""links:
-https://stackoverflow.com/questions/40717587/detecting-balls-on-a-pool-table
-file:///Users/franzr/Downloads/Weatherford_Pool_Table_Cue_Guide.pdf
-http://www.pyimagesearch.com/2015/09/14/ball-tracking-with-opencv/
-http://www.pyimagesearch.com/2015/09/21/opencv-track-object-movement/
-"""
 
-# ----first try----------------
+
+# ----first try: IMPORT ALL THE LIBS (reduce to one import scheme later)----------------
 import numpy as np 
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from skimage import io, filters, color, draw
 # -- coin example imports:
 # (http://scikit-image.org/docs/dev/user_guide/tutorial_segmentation.html)
@@ -24,8 +19,11 @@ from scipy import ndimage as ndi
 from scipy import misc
 from skimage.filters import sobel, threshold_otsu, threshold_mean
 from skimage.morphology import watershed
+from skimage.measure import label, regionprops
+from skimage.color import label2rgb
 # -- custom imports
 from helpers import greyscale, default_plot
+from dom_colors import dom_colors 
 # -- hough example imports:
 # (http://scikit-image.org/docs/0.8.0/auto_examples/plot_circular_hough_transform.html)
 from skimage.transform import hough_circle, hough_circle_peaks
@@ -48,6 +46,28 @@ import cv2
 LIGHT_BLUE = (56,186,199)
 # outline: import png, get thresholding shit and hough transform going
 # import screen shot for now
+
+def label_tabel(img, label_image):
+	"""only makes sense in main loop right now"""
+	# ------------ label regions in whole table model
+	image_label_overlay = label2rgb(label_image, image=img)
+	fig, ax = plt.subplots(figsize=(10, 6))
+	# --- guesstimate minimum table dims and hence highlight table
+	# assume camera at least showing half the table
+	min_table_area = 0.5*img.shape[0]*img.shape[0]
+	# loop through 
+	for region in regionprops(label_image):
+	# take regions with large enough areas
+		if region.area >= min_table_area:
+		# draw rectangle around segmented rectangle
+			minr, minc, maxr, maxc = region.bbox
+			rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
+									  fill=False, edgecolor='red', linewidth=2)
+			ax.add_patch(rect)
+	ax.imshow(image_label_overlay)
+	plt.tight_layout()
+	plt.show()
+
 
 def edge_fun(img, filled=False):
 	"""throwaway canny function, by default do not attempt to fill edges"""
@@ -84,7 +104,7 @@ def color_histo(img):
 		print "weird number of color channels going on: ", img.shape
 	return (histogram(chan) for chan in channels)
 
-def remove_color(colored_pic, rgb_color, tolerance=0.9):
+def remove_color(colored_pic, rgb_color, tolerance=0.7):
 	"""blanks out any color in image within tolerance-percentage of color given"""
 	# surprisingly, a high tolerance works best for the training pic...
 	img = colored_pic.copy()
@@ -92,9 +112,6 @@ def remove_color(colored_pic, rgb_color, tolerance=0.9):
 	rlims,glims,blims = ((rgb_color[i]*(1.0-tolerance),rgb_color[i]*(1+tolerance)) for i in range(3))
 	# set to black where within tolerance limits
 	# rgb stored as [[(255,255,255), (0,0,0)], [(100,100,100), (5,5,5)], etc...]
-	# -- this works suprisingly well as first guess:
-	# rimg[rimg[:,:,0]>60]=255
-	# -- more universal way:
 	img[((img[:, :, 0]>rlims[0]) & (img[:, :, 0]<rlims[1])) & 
 	((img[:, :, 1]>glims[0]) & (img[:, :, 1]<glims[1])) &
 	((img[:, :, 2]>blims[0]) & (img[:, :, 2]<blims[1]))] = 255
@@ -164,23 +181,55 @@ def cv_blob_detect(img):
 	cv2.waitKey(0)
 
 def main():
-	ballz = greyscale(io.imread("sc_cropped.png"))
-	color_ballz = io.imread("sc_cropped.png")
-	# r,g,b = color_histo(color_ballz)
-	# plt.plot(r[1],r[0],g[1],g[0], b[1], b[0])
-	# 
-	# result = edge_fun(ballz)
-	# default_plot([edge_fun(ballz), result])
-	uncolored = remove_color(color_ballz, LIGHT_BLUE)
+	file_path = "triangle.png"
+	# ballz = greyscale(io.imread(file_path))
+	color_ballz = io.imread(file_path)
+	# need to swap 
+	main_color = dom_colors(file_path,1,use_BGR=False)
+	uncolored = remove_color(color_ballz, main_color)
 	# cannied = edge_fun(greyscale(uncolored))
 	# houghed = hough_fun(cannied)
 	masked = mask_balls(uncolored)
 	eroded = eroder(masked, 5)
 	# misc.imsave("yo.png", eroder(masked, 10))
 	# cv_blob_detect("yo.png")
-	default_plot([masked, eroded])
+	### default_plot([masked, eroded])
 	# default_plot([color_ballz, uncolored, mask_balls], color=True)
 	# plt.show()
+
+	# -- create labels of processed photo; also display table rect
+	label_image = label(eroded)
+	label_tabel(eroded, label_image)
+
+	# --- try using table as mask -------------
+	# later, only look at within-table surface
+	# for now, the thing seems to work (i.e. mask generation)
+	# TODO: find contours, then look within contours
+	bigmask = np.zeros(color_ballz.shape[:2], dtype="uint8")
+	for lab in np.unique(label_image):
+		# if this is the background label, ignore it
+		if lab == 0:
+			continue
+		# otherwise, construct the label mask and count the
+		# number of pixels 
+		labelMask = np.zeros(color_ballz.shape[:2], dtype="uint8")
+		labelMask[label_image == lab] = 255
+		numPixels = cv2.countNonZero(labelMask)
+
+		# if the number of pixels in the component is sufficiently
+		# large, then add it to our mask of "large blobs"
+		if numPixels > 2000:
+			print numPixels
+			bigmask = cv2.add(bigmask, labelMask)
+			# resize so that if ****ng fits for once
+	# bigmask = cv2.resize(bigmask, 0.3, 0.3, interpolation);
+	#cv2.namedWindow("bigmask", cv2.WINDOW_NORMAL)
+	#cv2.imshow("bigmask", bigmask)
+	#cv2.resizeWindow("bigmask",600,600)
+	cv2.imwrite("bigmask.png",bigmask)
+	cv2.waitKey(0)
+
+
 
 if __name__ == "__main__":
 	main()

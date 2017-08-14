@@ -36,7 +36,7 @@ def draw_circle(ax, center, radius=30):
 """https://stackoverflow.com/questions/28242274/count-number-of-objects-using-watershed-algorithm-scikit-image"""
 def bilbo():
 	#"Figures/blob_test.png"
-	original = io.imread("Figures/blob_test.png")
+	original = io.imread("Figures/triangle.png")
 	image = color.rgb2gray(original)
 	# image = color.rgb2gray(io.imread("mickey.png"))
 	image = image < filters.threshold_otsu(image)
